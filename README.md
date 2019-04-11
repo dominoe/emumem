@@ -1,2 +1,2 @@
-# emumem
+# Emumem
 Memristor Emulator
