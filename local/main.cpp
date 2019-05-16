@@ -15,7 +15,7 @@
 #include <math.h>
 #include <wiringPi.h>
 #include <bcm2835.h>
-#include "DigiPotX9Cxxx-vRPi.h"
+#include "lib/DigiPotX9Cxxx-vRPi.h"
 
 using namespace std;
 
