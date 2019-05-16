@@ -1,7 +1,7 @@
 cd Documents/emu_mem
 
 Compilación del programa
-g++ -o main main.cpp lib/DigiPotX9Cxxx-vRPi.cpp lib/mcp3008Spi.cpp -lwiringPi
+g++ -o main main.cpp lib/DigiPotX9Cxxx-vRPi.cpp lib/mcp3008Spi.cpp -lwiringPi -lbcm2835
 
 Ejecución del programa
 sudo ./main
