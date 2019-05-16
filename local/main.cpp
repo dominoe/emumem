@@ -10,10 +10,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <iostream>
 #include <vector>
 #include <math.h>
 #include <wiringPi.h>
+#include <iostream>
 #include <bcm2835.h>
 #include "lib/DigiPotX9Cxxx-vRPi.h"
 
@@ -23,10 +23,10 @@ using namespace std;
 // CONSTANTES ////////////////////////////////////
 //////////////////////////////////////////////////
 
-#define RES_MIN			35.0
-#define RES_MAX			10034.0
-#define LEVELS			100
-#define QUANT_RES		(RES_MAX-RES_MIN)/(LEVELS-1.0)
+const int RES_MIN = 35;
+const int RES_MAX = 10034;
+const int LEVELS = 100;
+const float QUANT_RES = (RES_MAX-RES_MIN)/(LEVELS-1.0);
 
 #define INCPIN	0
 #define UDPIN		1
@@ -42,8 +42,8 @@ const uint8_t endi = 0x00;
 int run_mem(void);
 int spi_setup(void);
 int reset(void);
-int inc(float lvls);
-int dec(float lvls);
+int inc(uint8_t lvls);
+int dec(uint8_t lvls);
 int set_resistance(float res);
 int mcp3008_read(uint8_t chan);
 int mcp3008_data(int frequency, int interval, uint8_t channel);
@@ -107,9 +107,10 @@ int run_mem(void){
 
 	wiringPiSetup();
 	
-	
 	DigiPot* emu01 = new DigiPot(INCPIN, UDPIN, CSPIN);
-	emu01->reset();
+	//emu01->reset();
+	emu01->increase(DIGIPOT_MAX_AMOUNT);
+	
 
 	for(int k=0; k<100; k++){
 		emu01->increase(1);
@@ -146,7 +147,8 @@ void modelo_hp(double w = 0.5, double mu = 1){
 	
 	wiringPiSetup();
 	DigiPot* emu01 = new DigiPot(INCPIN, UDPIN, CSPIN);
-	emu01->reset();
+	//emu01->reset();
+	emu01->increase(DIGIPOT_MAX_AMOUNT);
 	
 	emu01->set(50);
 
@@ -175,15 +177,15 @@ int reset(void)
 	wiringPiSetup();
 	
 	DigiPot* emu01 = new DigiPot(INCPIN, UDPIN, CSPIN);
-	emu01->reset();
-	
+	//emu01->reset();
+	emu01->increase(DIGIPOT_MAX_AMOUNT);
 	delete emu01;
 	return 0;
 }
 
 //////////////////////////////////////////////////
 
-int inc(float lvls)
+int inc(uint8_t lvls)
 {
 
 	wiringPiSetup();
@@ -197,10 +199,12 @@ int inc(float lvls)
 
 //////////////////////////////////////////////////
 
-int dec(float lvls)
+int dec(uint8_t lvls)
 {
 	
 	wiringPiSetup();
+	
+	cout << (float)lvls << "\n";
 	
 	DigiPot* emu01 = new DigiPot(INCPIN, UDPIN, CSPIN);
 	emu01->decrease(lvls);
@@ -218,7 +222,8 @@ int set_resistance(float res)
 	wiringPiSetup();
 	
 	DigiPot* emu01 = new DigiPot(INCPIN, UDPIN, CSPIN);
-	emu01->reset();
+	//emu01->reset();
+	emu01->increase(DIGIPOT_MAX_AMOUNT);
 
 	cout << "Resistencia pedida = " << res << "\n";
 
@@ -227,6 +232,8 @@ int set_resistance(float res)
 
 	resvalue = rintf((res-RES_MIN)/QUANT_RES);
 	res = RES_MIN + resvalue*QUANT_RES;
+
+	cout << (res-RES_MIN) << endl << QUANT_RES << endl;
 
 	cout << "Resistencia seteada = " << res << "\n";
 	cout << "Nivel seteado = " << (int) resvalue << "\n";
