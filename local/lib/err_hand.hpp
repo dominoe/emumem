@@ -1,5 +1,21 @@
 #pragma once
 
+#include <iostream>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <vector>
+
+//////////////////////////////////////////////////
+// PROTOTIPOS ////////////////////////////////////
+//////////////////////////////////////////////////
+
+void exit_success(std::string);
+void exit_failure(std::string);
+void flush_message(std::string);
+bool try_subroutine(std::string, int);
+static struct { int argc; std::string name; std::vector<std::string> argv; } Subroutine;
+
 //////////////////////////////////////////////////
 // CONTROL DE ERRORES ////////////////////////////
 //////////////////////////////////////////////////
