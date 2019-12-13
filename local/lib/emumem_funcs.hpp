@@ -1,6 +1,5 @@
 #pragma once
 
-
 //////////////////////////////////////////////////
 // BIBLIOTECAS ///////////////////////////////////
 //////////////////////////////////////////////////
@@ -15,15 +14,20 @@
 #include <iostream>
 #include <bcm2835.h>
 #include "DigiPotX9Cxxx-vRPi.h"
+#include "LambertW.h"
 
 //////////////////////////////////////////////////
 // CONSTANTES ////////////////////////////////////
 //////////////////////////////////////////////////
 
-const int RES_MIN = 35;
-const int RES_MAX = 10035;
-const int LEVELS = 100;
-const float QUANT_RES = (RES_MAX - RES_MIN) / (LEVELS - 1.0);
+const double RES_MIN = 37.661;
+const double RES_MAX = 9402.4;
+const double LEVELS = 100.0;
+
+const uint8_t LVL_MIN = 0;
+const uint8_t LVL_MAX = 99;
+
+const double QUANT_RES = (RES_MAX - RES_MIN) / (LEVELS - 1.0);
 
 const uint8_t starti = 0x01;
 const uint8_t endi = 0x00;
@@ -32,14 +36,18 @@ const uint8_t endi = 0x00;
 // MACROS ////////////////////////////////////////
 //////////////////////////////////////////////////
 
+//#define INCPIN	0
+//#define UDPIN	1
+//#define CSPIN	4
+
 #define INCPIN	0
-#define UDPIN		1
-#define CSPIN		4
+#define UDPIN	1
+#define CSPIN	4
 
-#define SIGMOID_M(v,a,d) 1 / (1 + exp(-a * (v - d)))
-#define SIGMOID_P(v,a,d) 1 / (1 + exp(-a * (v + d)))
-#define LAMBDA(v,old,a,d) fmin(SIGMOID_M(v,a,d), fmax(old, SIGMOID_P(v,a,d)))
 
+#define SIGMOID_M(v,a_minus,d_minus) 1.0 / (1.0 + exp(-a_minus * (v + d_minus)))
+#define SIGMOID_P(v,a_plus,d_plus) 1.0 / (1.0 + exp(-a_plus * (v - d_plus)))
+#define LAMBDA(v,old,a_minus,a_plus,d_minus,d_plus) fmin(SIGMOID_M(v,a_minus,d_minus), fmax(old, SIGMOID_P(v,a_plus,d_plus)))
 #define VOLT_READ() mcp3008_read(0)*v_slope + v_intercept
 
 //////////////////////////////////////////////////
@@ -54,8 +62,8 @@ int dec(uint8_t lvls);
 int set_resistance(float res);
 int mcp3008_read(uint8_t chan);
 int mcp3008_data(int frequency, int interval, uint8_t channel);
-void modelo_hp(double, double);
-void modelo_hist(double, double, float, float, float, float);
+void modelo_hp(double, double, int);
+void modelo_hdp(double, double, float, float, float, float, int);
 
 //////////////////////////////////////////////////
 // FUNCIONES GENERALES ///////////////////////////
@@ -91,119 +99,268 @@ Observaciones:
 * I = V/res = (mcp3008_read(0)*v_slope+v_intercept)/res
 */
 
-void modelo_hp(double w = 0.5, double mu = 1, int n_meds = 1000) {
+void modelo_hp(double w = 0.5, double mu = 1.0, uint8_t lvl_on = 0, uint8_t lvl_off = DIGIPOT_MAX_AMOUNT, int n_meds = 1000) {
 
-//	double* ret_dt = new double[n_meds];
-	//double* ret_v = new double[n_meds];
-	
-	const double r_on = 1035.0;
-	const double r_diff = r_on - RES_MAX;
-
-	const double v_off = 2.5; // Offset de voltaje
-	const double v_att = 0.68; // Atenuación de voltaje
-	const double v_slope = 5.0 / 1023.0 / v_att;
-	const double v_intercept = -v_off / v_att;
-
-	double I, V, R = RES_MIN;
-
-	uint8_t r_level = 0;
-
-	struct timespec gettime_now;
-	float dt, t_prev, t_cur;
-
-	if (spi_setup() != 0) return;
-
-	wiringPiSetup();
-	DigiPot* emu01 = new DigiPot(INCPIN, UDPIN, CSPIN);
-	//emu01->reset();
-	emu01->increase(DIGIPOT_MAX_AMOUNT);
-
-	emu01->set(50);
-
-	clock_gettime(CLOCK_REALTIME, &gettime_now);
-	t_cur = gettime_now.tv_nsec;
-
-	while(1)
-//	for(int i=0; i<n_meds;i++)
-	{
-		t_prev = t_cur;
-		clock_gettime(CLOCK_REALTIME, &gettime_now);
-
-		t_cur = gettime_now.tv_nsec;	
-		
-		dt = t_cur - t_prev;
-		if (dt<0.0) dt += 1.0e+9;
-		w += (float)dt*mu*1.0e-9*RES_MAX*(mcp3008_read(0)*v_slope + v_intercept) / R;
-		if (w<0) w = 0;
-		else if (w>1) w = 1;
-		R = r_diff * w + RES_MAX;
-		emu01->set(uint8_t(rint(((float)(R - RES_MIN)) / ((float)QUANT_RES))));		
-		
-//		ret_dt[i] = dt;	
-	}
-	
-//	for(int i=0; i<n_meds;i++) std::cout << ret_dt[i] << "\t";
-
-}
-
-//////////////////////////////////////////////////
-
-void modelo_hist(double w = 0.5, float a = 1, float d = 1, float t0 = 1, float v0 = 1) {
-
-	const uint8_t lvl_off = DIGIPOT_MAX_AMOUNT;
-	const uint8_t lvl_on = 10;
-	const int8_t lvl_diff = lvl_on - lvl_off;
+	const int8_t lvl_diff = lvl_off-lvl_on;
 
 	const double r_off = RES_MIN + QUANT_RES * lvl_off;
 	const double r_on = RES_MIN + QUANT_RES * lvl_on;
 	const double r_diff = QUANT_RES * lvl_diff;
 
-	std::cout << r_diff << std::flush;
-
-	const double v_off = 2.5; // Offset de voltaje
-	const double v_att = 0.68; // Atenuación de voltaje
+	const double v_off = 2.505; // Offset de voltaje
+	//const double v_att = 0.6734; // Atenuación de voltaje
+	const double v_att = 1;
 	const double v_slope = 5.0 / 1023.0 / v_att;
 	const double v_intercept = -v_off / v_att;
 
-	//uint8_t r_level = 0;
+	double constante = mu*r_on*1.0e-9*v_slope;
+	double mcp_correction = v_intercept/v_slope;
+
+	uint8_t r_level = lvl_off - (uint8_t)rint(w*((double)lvl_diff));
+
+	//std::cout << (double)r_level << ' ' << w*((double)lvl_diff) << ' ' << (double)lvl_off << std::endl;
+
+	double R = RES_MIN+r_level*QUANT_RES;
 
 	struct timespec gettime_now;
 	float dt, t_prev, t_cur;
 
 	if (spi_setup() != 0) return;
 
-	double I, V = VOLT_READ(), R = r_diff * w + RES_MAX;
-	double lambda = SIGMOID_M(V, a, d);
+	wiringPiSetup();
+	DigiPot* emu01 = new DigiPot(INCPIN, UDPIN, CSPIN);
+	emu01->increase(DIGIPOT_MAX_AMOUNT);
+	emu01->set(r_level);
+
+	clock_gettime(CLOCK_REALTIME, &gettime_now);
+	t_cur = gettime_now.tv_nsec;
+	
+	// MEDICIÓN DE TIEMPO DE INTEGRACIÓN O w (OPCIONAL)
+	int i = 0;
+	double* ret_dt = new double[n_meds];
+	double * ret_w = new double[n_meds];
+
+	while(1)
+	{
+		t_prev = t_cur;
+		clock_gettime(CLOCK_REALTIME, &gettime_now);
+		t_cur = gettime_now.tv_nsec;
+		dt = t_cur - t_prev;
+		if(dt<0.0) dt += 1.0e+9;
+
+		w += (double)dt*constante*( (double)mcp3008_read(0)+mcp_correction)/R;
+		
+		if(w<0.0) w = 0.0;
+		else if(w>1.0) w = 1.0;
+
+		r_level = lvl_off - (uint8_t)rint(w*((float)lvl_diff));
+		
+		emu01->set(r_level);
+		
+		R = RES_MIN+r_level*QUANT_RES;
+		
+		//emu01->set(uint8_t(rint(((float)(R - RES_MIN)) / ((float)QUANT_RES))));
+		
+		// MEDICIÓN DE w, tiempo de integración, etc. (DESCOMENTAR EN NECESIDAD)
+		//ret_dt[i] = dt;
+		//ret_w[i] = w;
+		//if(++i>n_meds) break;
+	}
+
+	// IMPRESIÓN DE TIEMPOS DE INTEGRACIÓN o w
+	//for(int i=0; i<n_meds;i++) std::cout << ret_dt[i] << "\t";
+	//for(int i=0; i<n_meds;i++) std::cout << ret_w[i] << "\t";
+
+}
+
+//////////////////////////////////////////////////
+
+// v0 0.3
+// vgen 4
+// delta 0.2
+// t0 0.01
+// 15 / 30
+
+void modelo_hdp(double w = 0.5, double a_minus = 1.0, double a_plus = 1.0, double d_minus = 1.0, double d_plus = 1.0, double t0 = 1.0, double v0 = 1.0, uint8_t lvl_on = 0, uint8_t lvl_off = 99, int n_meds = 1000) {
+
+	//const uint8_t lvl_off = DIGIPOT_MAX_AMOUNT;
+	//const uint8_t lvl_on = 10;
+	const int8_t lvl_diff = lvl_off-lvl_on;
+
+	// VARIABLES PARA MEDIR EL TIEMPO DE INTEGRACIÓN (DESCOMENTAR EN NECESIDAD)
+	// MEDICIÓN DE TIEMPO DE INTEGRACIÓN O w (OPCIONAL)
+	int i = 0;
+	double* ret_dt = new double[n_meds];
+	double * ret_w = new double[n_meds];
+	double * ret_v = new double[n_meds];
+
+	const double v_off = 2.505; // Offset de voltaje
+	//const double v_att = 0.6734; // Atenuación de voltaje
+	const double v_att = 1;
+	const double v_slope = 5.0 / 1023.0 / v_att;
+	const double v_intercept = -v_off / v_att;
+
+	uint8_t r_level = lvl_off - (uint8_t)rint(w*((float)lvl_diff));
+
+	struct timespec gettime_now;
+	double dt, t_prev, t_cur;
+
+	if (spi_setup() != 0) return;
 
 	wiringPiSetup();
 	DigiPot* emu01 = new DigiPot(INCPIN, UDPIN, CSPIN);
-	//emu01->reset();
 	emu01->increase(DIGIPOT_MAX_AMOUNT);
-
-	emu01->set(round(lvl_diff*w + lvl_off));
+	emu01->set(r_level);
 
 	clock_gettime(CLOCK_REALTIME, &gettime_now);
 	t_cur = gettime_now.tv_nsec;
 
-	while (1) {
+	double v = mcp3008_read(1)*v_slope + v_intercept;
+	//double lambda = SIGMOID_P(v, a, d);
+	double lambda = w; // Para que no se mueva al principio (cond inicial).
+
+	double constante = 1.0e-9/t0;
+
+	while(1)
+	{
 		t_prev = t_cur;
 		clock_gettime(CLOCK_REALTIME, &gettime_now);
+		t_cur = gettime_now.tv_nsec;
+		dt = t_cur - t_prev;
+		
 
+		if (dt<0.0) dt += 1.0e+9;
+		//v = mcp3008_read(0)*v_slope + v_intercept;
+		//lambda = LAMBDA(v,lambda,a,d);
+		//w += (float)dt*1.0e-9*(lambda - w) / (t0*exp(-abs(v) / v0));
+
+		v = mcp3008_read(1)*v_slope + v_intercept;
+		lambda = LAMBDA(v,lambda,a_minus, a_plus, d_minus, d_plus);
+		//w +=  (dt*constante*(lambda - w)*exp(abs(v)/((double)v0)));
+		w = (dt * 1.0e-9 * lambda + w*t0/exp(abs(v)/((double)v0)))/(dt*1.0e-9 + t0/exp(abs(v)/((double)v0)));
+		if(w<0) w = 0;
+		else if(w>1) w = 1;
+
+		r_level = lvl_off - (uint8_t)rint(((float)w)*((float)lvl_diff));
+		emu01->set(r_level);
+		//R = RES_MIN+r_level*QUANT_RES;
+		
+		// MEDICIÓN DE w, tiempo de integración, etc. (DESCOMENTAR EN NECESIDAD)
+		//ret_dt[i] = dt;
+		//ret_w[i] = w;
+		//ret_v[i] = v;
+		//if(++i>n_meds) break;
+		
+		//R = r_diff * w + RES_MAX;
+		//emu01->set(uint8_t(rint(((float)(R - RES_MIN)) / ((float)QUANT_RES))));
+	}
+	
+	// IMPRESIÓN DE TIEMPOS DE INTEGRACIÓN o w
+	//for(int i=0; i<n_meds;i++) std::cout << ret_dt[i] << "\t";
+	//for(int i=0; i<n_meds;i++) std::cout << ret_w[i] << "\t";
+	//for(int i=0; i<n_meds;i++) std::cout << ret_v[i] << "\t";
+}
+
+//////////////////////////////////////////////////
+
+double sgn(double x){return (x>=0)-(x<0);}
+//double Lambert(double x){return log(1+x)*(1-log(1+log(1+x))/(2+log(1+x)));}
+double Lambert(double x){return utl::LambertW<0>(x);}
+double I_nonlinear(double V, double I0, double a, double Rs){double phi = a*Rs*I0; return sgn(V)*I0*(Lambert(phi*exp(a*abs(V)+phi))/phi-1);}
+
+void modelo_hdpn(double w = 0.5, double eta_m = 1.0, double eta_p = 1.0, double delta_m = 1.0, double delta_p = 1.0, double t0 = 1.0, double v0 = 1.0, double alpha = 1.0, double Rs = 100.0, double I0min = 1.0, double I0max = 1.0, uint8_t lvl_on = 0, uint8_t lvl_off = 99, int n_meds = 100)
+{
+	//const uint8_t lvl_off	= 80; //20;
+	//const uint8_t lvl_on	= 2; //10;
+	const uint8_t lvl_diff	= lvl_off-lvl_on;
+
+	const double v_off = 2.505; // Offset de voltaje
+	//const double v_att = 0.6734; // Atenuación de voltaje
+	const double v_att = 1;
+	const double v_slope = 5.0 / 1023.0 / v_att;
+	const double v_intercept = -v_off / v_att;
+		
+	uint8_t r_level = lvl_off - (uint8_t)rint(w*((double)lvl_diff));
+
+	struct timespec gettime_now;
+	double dt, t_prev, t_cur;
+
+	if (spi_setup() != 0) return;
+
+	wiringPiSetup();
+	DigiPot* emu_01 = new DigiPot(INCPIN, UDPIN, CSPIN);
+	emu_01->increase(lvl_off);
+	emu_01->set(r_level);
+
+	clock_gettime(CLOCK_REALTIME, &gettime_now);
+	t_cur = gettime_now.tv_nsec;
+
+	// MEDICIÓN DE TIEMPO DE INTEGRACIÓN O w (OPCIONAL)
+	int i = 0;
+	double* ret_dt = new double[n_meds];
+	//double * ret_w = new double[n_meds];
+	//double * ret_v = new double[n_meds];
+	//double * ret_I = new double[n_meds];
+
+	double v = mcp3008_read(0)*v_slope + v_intercept;
+	double lambda = w; // Para que no se mueva al principio (condición inicial).
+	double constante = 1.0e-9/t0;
+	double R;
+
+	while(1)
+	{
+		t_prev = t_cur;
+		clock_gettime(CLOCK_REALTIME, &gettime_now);
 		t_cur = gettime_now.tv_nsec;
 		dt = t_cur - t_prev;
 		if (dt<0.0) dt += 1.0e+9;
 
-		V = VOLT_READ();
+		v = mcp3008_read(0)*v_slope + v_intercept;
+		lambda = LAMBDA(v,lambda,eta_m, eta_p, delta_m, delta_p);
+		w +=  (dt*constante*(lambda - w)*exp(abs(v)/((double)v0)));
 
-		lambda = LAMBDA(V, lambda, a, d);
-		w += (float)dt*1.0e-9*(lambda - w) / (t0*exp(-abs(V) / v0));
+		if(w<0.0) w = 0.0;
+		else if(w>1.0) w = 1.0;
 
-		if (w<0) w = 0;
-		else if (w>1) w = 1;
-		R = r_diff * w + RES_MAX;
-		emu01->set(uint8_t(rint(((float)(R - RES_MIN)) / ((float)QUANT_RES))));
+		R = v / I_nonlinear(v,I0min+ w*(I0max-I0min),alpha,Rs);
+
+		r_level = (uint8_t)rint((R-RES_MIN)/QUANT_RES);
+
+		if (r_level < lvl_on) r_level = lvl_on;
+		if (r_level > lvl_off) r_level = lvl_off;
+
+		emu_01->set(r_level);
+		
+		//OPCIONAL: DESCOMENTAR PARA CALCULAR TIEMPO DE INTEGRACIÓN
+		//time_dt[time_i++] = dt;
+		//if(time_total<time_max)
+		//{for(int i=0; i<time_i;i++) std::cout << time_dt[i] << "\t"; break;}
+
+		// MEDICIÓN DE w, tiempo de integración, etc. (DESCOMENTAR EN NECESIDAD)
+		//ret_dt[i] = dt;
+		//ret_w[i] = w;
+		//ret_v[i] = v;
+		//ret_I[i] = I_nonlinear(v,I0min+ w*(I0max-I0min),alpha,Rs);
+		//if(++i>n_meds) break;
 	}
+	// IMPRESIÓN DE TIEMPOS DE INTEGRACIÓN o w
+	//for(int i=0; i<n_meds;i++) std::cout << ret_dt[i] << "\t";
+	//for(int i=0; i<n_meds;i++) std::cout << ret_w[i] << "\t";
+	//for(int i=0; i<n_meds;i++) std::cout << ret_v[i] << "\t";
+	//for(int i=0; i<n_meds;i++) std::cout << ret_I[i] << "\t";
 }
+
+/*
+double get_dt(time)
+{
+	t_prev = t_cur;
+	clock_gettime(CLOCK_REALTIME, &gettime_now);
+	t_cur = gettime_now.tv_nsec;
+	dt = t_cur - t_prev;
+	if (dt<0.0) dt += 1.0e+9;
+	return time, dt;
+}
+*/
 
 //////////////////////////////////////////////////
 
